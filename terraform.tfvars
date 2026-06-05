@@ -1,0 +1,17 @@
+aws_region           = "ap-southeast-1"
+username             = "yousaf"
+vpc_cidr             = "10.10.0.0/16"
+availability_zones   = ["ap-southeast-1a", "ap-southeast-1b", "ap-southeast-1c"]
+vpc_private_subnets  = ["10.10.1.0/24", "10.10.2.0/24", "10.10.3.0/24"]
+vpc_public_subnets   = ["10.10.11.0/24", "10.10.12.0/24", "10.10.13.0/24"]
+enable_dns_hostnames = true
+enable_dns_support   = true
+enable_nat_gateway   = true
+single_nat_gateway   = true
+instance_type        = "t2.micro"
+min_size_asg         = 1
+max_size_asg         = 2
+desired_capacity_asg = 1
+health_check_type    = "EC2"
+sg_description       = "EC2 security group with publicly open HTTP and SSH ports"
+sg_ingress_rules     = ["http-80-tcp", "ssh-tcp", "all-icmp"]

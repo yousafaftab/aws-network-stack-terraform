@@ -1,0 +1,18 @@
+# Ignore Terraform state files
+*.tfstate
+*.tfstate.backup
+*.tfstate.backup.*
+*.tfstate.*
+.terraform/
+*.hcl
+
+# Ignore sensitive information (change this if needed)
+*.pem
+*.pem.*
+*.key
+
+# Ignore AWS credentials and configuration files
+credentials
+*.credentials
+*.config
+.DS_Store

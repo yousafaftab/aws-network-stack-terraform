@@ -1,133 +1,173 @@
 # Network Stack on AWS
 
-This project provides a Terraform configuration to set up a robust and flexible network stack on AWS. It leverages the Terraform AWS modules to create and manage a Virtual Private Cloud (VPC), Security Groups, Auto Scaling Groups (ASGs), and associated resources such as subnets, route tables, and NAT gateways. This setup is designed to be highly customizable, allowing for efficient scaling and management of resources within the AWS ecosystem.
+A production-ready AWS network infrastructure built with **Terraform**, using official community modules. This project provisions a fully layered VPC with public and private subnets across multiple Availability Zones, NAT gateway for secure private-subnet egress, and an Auto Scaling Group of EC2 instances — all driven by clean, variable-first configuration.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Usage](#usage)
-- [Modules](#modules)
-- [Variables](#variables)
-- [Outputs](#outputs)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Overview
-
-This Terraform project automates the deployment of a network stack on AWS using infrastructure as code (IaC). The configuration deploys a VPC with public and private subnets, internet gateways, NAT gateways, security groups, and an Auto Scaling Group (ASG) for scalable compute resources. This setup is ideal for environments that require a flexible, secure, and highly available infrastructure.
+---
 
 ## Architecture
-![Architecture Diagram](./images/architecture_diagram.webp)
-The network architecture includes:
 
-- A VPC with a customizable CIDR block.
-- Public and private subnets spread across multiple Availability Zones (AZs).
-- Internet Gateway for outbound internet access for public subnets.
-- NAT Gateway for secure internet access from private subnets.
-- Security Groups for controlling inbound and outbound traffic.
-- An Auto Scaling Group for scaling EC2 instances automatically based on demand.
+![Architecture Diagram](./images/architecture_diagram.webp)
+
+```
+                     ┌────────────────────────────────────────────┐
+                     │                 AWS Region                  │
+                     │                                             │
+                     │  ┌──────────────── VPC ─────────────────┐  │
+                     │  │                                       │  │
+  Internet ─────────────►  Internet Gateway                    │  │
+                     │  │         │                             │  │
+                     │  │  ┌──────┴──────┐   ┌─────────────┐   │  │
+                     │  │  │  Public     │   │  Public     │   │  │
+                     │  │  │  Subnet AZ1 │   │  Subnet AZ2 │   │  │
+                     │  │  └──────┬──────┘   └──────┬──────┘   │  │
+                     │  │         │  NAT GW          │          │  │
+                     │  │  ┌──────▼──────┐   ┌──────▼──────┐   │  │
+                     │  │  │  Private    │   │  Private    │   │  │
+                     │  │  │  Subnet AZ1 │   │  Subnet AZ2 │   │  │
+                     │  │  └─────────────┘   └─────────────┘   │  │
+                     │  │                                       │  │
+                     │  │  Auto Scaling Group                   │  │
+                     │  │  ├── EC2 instances (min/max/desired)  │  │
+                     │  │  └── Security Group (HTTP + egress)   │  │
+                     │  └───────────────────────────────────────┘  │
+                     └────────────────────────────────────────────┘
+```
+
+---
 
 ## Features
 
-- **Highly Configurable**: Easily customize the CIDR range, number of subnets, instance types, and other parameters.
-- **Scalable Infrastructure**: Automatically scales EC2 instances in response to demand.
-- **Secure Networking**: Implements Security Groups with customizable ingress and egress rules.
-- **Modular Design**: Uses Terraform AWS modules for VPC, ASG, and Security Group management.
-- **User Data Script**: Installs Nginx on EC2 instances upon launch, providing a simple web server setup.
+- **Multi-AZ VPC** — Public and private subnets distributed across configurable Availability Zones for high availability
+- **Internet Gateway** — Outbound internet access for public subnet resources
+- **NAT Gateway** — One-way internet access from private subnets; optional `single_nat_gateway` mode reduces cost
+- **Auto Scaling Group** — EC2 fleet with configurable min, max, and desired capacity; always uses the latest Amazon Linux AMI
+- **Security Groups** — Fully configurable ingress and egress rule sets via named rule variables
+- **EC2 Key Pair** — SSH key pair provisioned and managed through Terraform
+- **Module-driven** — Built on `terraform-aws-modules/vpc` and `terraform-aws-modules/autoscaling` for reliability and community best practices
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Infrastructure as Code | Terraform >= 1.9.0 |
+| Networking | `terraform-aws-modules/vpc/aws` (~> 5.13) |
+| Compute | `terraform-aws-modules/autoscaling/aws` (~> 8.0) |
+| Cloud Provider | AWS (`hashicorp/aws` ~> 5.66) |
+
+---
+
+## Project Structure
+
+```
+network-stack-on-aws/
+├── vpc.tf              # VPC, subnets, internet gateway, NAT gateway
+├── asg.tf              # Auto Scaling Group and launch template
+├── sg.tf               # Security group configuration
+├── keypair.tf          # EC2 SSH key pair
+├── data.tf             # AMI and availability zone data sources
+├── locals.tf           # Computed local values and resource tags
+├── variables.tf        # All input variable declarations
+├── terraform.tfvars    # Deployment variable values
+├── output.tf           # Stack outputs
+├── providers.tf        # AWS provider configuration
+├── versions.tf         # Terraform and provider version constraints
+└── images/
+    └── architecture_diagram.webp
+```
+
+---
+
+## Configuration
+
+All variables are declared in `variables.tf` and set via `terraform.tfvars`.
+
+**VPC Variables**
+
+| Variable | Description | Default |
+|---|---|---|
+| `aws_region` | AWS deployment region | `ap-southeast-1` |
+| `vpc_cidr` | VPC CIDR block | — |
+| `vpc_public_subnets` | List of public subnet CIDR blocks | — |
+| `vpc_private_subnets` | List of private subnet CIDR blocks | — |
+| `availability_zones` | Target Availability Zones | `["ap-southeast-1a"]` |
+| `enable_nat_gateway` | Provision a NAT gateway | `false` |
+| `single_nat_gateway` | Use one shared NAT gateway to reduce cost | `false` |
+| `enable_dns_hostnames` | Enable DNS hostnames in the VPC | `false` |
+| `enable_dns_support` | Enable DNS resolution in the VPC | `false` |
+
+**Auto Scaling Group Variables**
+
+| Variable | Description | Default |
+|---|---|---|
+| `instance_type` | EC2 instance type (e.g. `t3.micro`) | — |
+| `min_size_asg` | Minimum instance count | `0` |
+| `max_size_asg` | Maximum instance count | `0` |
+| `desired_capacity_asg` | Desired running instance count | `0` |
+| `health_check_type` | Health check type: `EC2` or `ELB` | — |
+
+**Security Group Variables**
+
+| Variable | Description | Default |
+|---|---|---|
+| `sg_description` | Security group description | — |
+| `sg_ingress_rules` | Named ingress rule list | `["http-80-tcp"]` |
+| `sg_ingress_cidr_block` | Allowed source CIDR blocks | `["0.0.0.0/0"]` |
+| `sg_egress_rules` | Named egress rule list | `["all-all"]` |
+| `sg_egress_cidr_block` | Allowed destination CIDR blocks | `["0.0.0.0/0"]` |
+
+---
 
 ## Prerequisites
 
-Before you begin, ensure you have the following:
+- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.9.0
+- [AWS CLI](https://aws.amazon.com/cli/) configured with appropriate credentials
+- AWS IAM permissions to create VPCs, EC2 instances, Auto Scaling Groups, and NAT Gateways
 
-- **Terraform** installed on your local machine (version 1.0+).
-- **AWS CLI** configured with the necessary access and secret keys.
-- An **AWS Account** with appropriate permissions to create and manage resources.
-- An **SSH Key Pair** to access EC2 instances.
+---
 
-## Usage
+## Deployment
 
-1. **Initialize Terraform**:
-    ```bash
-    terraform init
-2. **Customize Variables**
+```bash
+# Clone the repository
+git clone <repo-url>
+cd network-stack-on-aws
 
-Update the variables.tf file or create a terraform.tfvars file to customize the variable values as needed.
+# Initialize Terraform and download providers/modules
+terraform init
 
-3. **Plan the Infrastructure**
-    ```bash
-    terraform plan
-4. **Apply the Configurations**
-    ```bash
-    terraform apply
-Confirm the apply step with yes when prompted.
+# Validate configuration
+terraform validate
 
-5. **Destroy the Infrastructure**
-    ```bash
-    terraform destroy
+# Preview resources to be created
+terraform plan
 
-## Modules
+# Deploy the infrastructure
+terraform apply
+```
 
-This project utilizes the following Terraform modules:
-
-**VPC Module:** Creates and manages a VPC, subnets, route tables, and NAT gateways.
-
-**Security Group Module:** Manages EC2 security groups with customizable ingress and egress rules.
-
-**Auto Scaling Group Module:** Creates an Auto Scaling Group with the specified instance type and capacity settings.
-
-## Variables
-
-Key variables used in this project:
-| Variable                    | Description                                                                                           | Default Value                 |
-|-----------------------------|-------------------------------------------------------------------------------------------------------|-------------------------------|
-| `aws_region`                | The AWS region where the infrastructure will be deployed. Example: ap-southeast-1 (Singapore)          | `ap-southeast-1`              |
-| `username`                  | The username of the individual applying the Terraform code, used for resource tagging or tracking changes. | `""`                          |
-| **VPC VARIABLES**           |                                                                                                       |                               |
-| `vpc_cidr`                  | The CIDR block for the Virtual Private Cloud (VPC). Defines the range of IP addresses for the VPC.     | `""`                          |
-| `availability_zones`        | The list of Availability Zones within the region where the VPC resources (such as subnets) will be deployed. | `["ap-southeast-1a"]`         |
-| `vpc_private_subnets`       | A list of CIDR blocks for private subnets within the VPC, typically used for internal resources not exposed to the internet. | `[]`                          |
-| `vpc_public_subnets`        | A list of CIDR blocks for public subnets within the VPC, typically used for resources that need direct internet access. | `[]`                          |
-| `enable_dns_hostnames`      | A boolean flag to enable or disable DNS hostnames in the VPC. Required for instances that need DNS resolution. | `false`                       |
-| `enable_dns_support`        | A boolean flag to enable or disable DNS support in the VPC. When enabled, the instances can resolve AWS service endpoints. | `false`                       |
-| `enable_nat_gateway`        | A boolean flag to enable or disable a NAT gateway in the VPC, which allows instances in private subnets to access the internet. | `false`                       |
-| `single_nat_gateway`        | A boolean flag to specify if a single NAT gateway should be created for the entire VPC. Helps in reducing costs. | `false`                       |
-| **ASG VARIABLES**           |                                                                                                       |                               |
-| `instance_type`             | The type of EC2 instance (e.g., t2.micro, t3.medium) to be deployed by the Auto Scaling Group.         | `""`                          |
-| `min_size_asg`              | The minimum number of EC2 instances that should be maintained by the Auto Scaling Group.               | `0`                           |
-| `max_size_asg`              | The maximum number of EC2 instances that can be launched by the Auto Scaling Group.                    | `0`                           |
-| `desired_capacity_asg`      | The desired number of EC2 instances that should be running in the Auto Scaling Group.                  | `0`                           |
-| `wait_for_capacity_timeout` | The maximum time (in seconds) to wait for the Auto Scaling Group to reach the desired capacity.        | `0`                           |
-| `health_check_type`         | The type of health checks (e.g., EC2, ELB) to perform on instances in the Auto Scaling Group.          | `""`                          |
-| **SG VARIABLES**            |                                                                                                       |                               |
-| `sg_description`            | A description or purpose of the Security Group associated with EC2 instances.                          | `""`                          |
-| `sg_ingress_cidr_block`     | A list of CIDR blocks allowed for ingress traffic. Defines the allowed source IPs for inbound traffic. | `["0.0.0.0/0"]`               |
-| `sg_ingress_rules`          | A list of ingress rules defining the allowed protocols, ports, and sources for inbound traffic.        | `["http-80-tcp"]`             |
-| `sg_egress_cidr_block`      | A list of CIDR blocks allowed for egress traffic. Defines the allowed destination IPs for outbound traffic. | `["0.0.0.0/0"]`               |
-| `sg_egress_rules`           | A list of egress rules defining the allowed protocols, ports, and destinations for outbound traffic.   | `["all-all"]`                 |
+---
 
 ## Outputs
-The following outputs are provided by the Terraform configuration:
 
-**name:** The name of the network stack.
+| Output | Description |
+|---|---|
+| `name` | Name of the network stack |
+| `aws_account_id` | AWS account ID of the deployment |
+| `vpc_id` | ID of the created VPC |
+| `public_subnets` | List of public subnet IDs |
+| `private_subnets` | List of private subnet IDs |
+| `ec2_security_group_name` | Name of the EC2 security group |
+| `autoscaling_group_id` | ID of the Auto Scaling Group |
+| `private_key_pem` | SSH private key for EC2 access *(sensitive)* |
 
-**aws_account_id:** The AWS account ID where the stack is deployed.
+---
 
-**vpc_id:** The ID of the created VPC.
+## Cleanup
 
-**public_subnets:** List of public subnet IDs.
+```bash
+terraform destroy
+```
 
-**private_subnets:** List of private subnet IDs.
-
-**ec2_security_group_name:** The name of the EC2 Security Group.
-
-**autoscaling_group_id:** The ID of the Auto Scaling Group.
-
-**launch_configuration_id:** The ID of the launch configuration.
-
-**private_key_pem:** The SSH private key for accessing EC2 instances (sensitive).
-
-## Contributing
-Contributions are welcome! Please submit a pull request or open an issue to suggest improvements or report bugs.
+> Confirm with `yes` when prompted. This permanently deletes all provisioned resources including the VPC, NAT gateway, and Auto Scaling Group.
